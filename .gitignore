@@ -27,6 +27,10 @@ Cargo.lock
 /tests/*.csv
 /tests/*.md
 
+# Generated definition files
+/definitions/*.csv
+/definitions/*.md
+
 # Generated execution files
 /executions/*.csv
 /executions/*.md

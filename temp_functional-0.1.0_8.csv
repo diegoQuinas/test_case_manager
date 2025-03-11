@@ -1,0 +1,6 @@
+id,description,status,observations,evidence
+1,"Verificar que el header tenga fondo blanco y contenga el campo de búsqueda",Pending,"",""
+2,"Verificar que al presionar "Recibe" hay una funcionalidad",Pending,"",""
+3,"El ícono de la derecha es un carrito",Pending,"",""
+4,"Se muestra la región y dirección del usuario",Pending,"",""
+5,"La hora y batería del dispositivo sigue siendo visible a pesar del fondo blanco",Pending,"",""
