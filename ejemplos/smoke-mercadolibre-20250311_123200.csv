@@ -1,0 +1,11 @@
+id,description,status,observations,evidence
+TC1,Verificar que la página principal de MercadoLibre carga correctamente,Validated,"La página principal carga en menos de 3 segundos, mostrando todos los elementos correctamente","/capturas/ml_home.png"
+TC2,Comprobar que la barra de búsqueda funciona correctamente,Validated,"La búsqueda de 'iPhone 15' muestra resultados relevantes","/capturas/ml_busqueda.png"
+TC3,Verificar que el sistema de filtros funciona adecuadamente,Pending,"",""
+TC4,Comprobar que el proceso de inicio de sesión funciona correctamente,Rejected,"Al intentar iniciar sesión con credenciales válidas, ocasionalmente muestra error de timeout","/capturas/ml_login_error.png"
+TC5,Verificar que el carrito de compras permite agregar productos,Validated,"Se agregaron 3 productos diferentes al carrito sin problemas","/capturas/ml_carrito.png"
+TC6,Comprobar que se puede acceder a las categorías principales,Validated,"Todas las categorías son accesibles y muestran productos","/capturas/ml_categorias.png"
+TC7,Verificar que las ofertas del día se muestran correctamente,Blocked,"No se pudo acceder a la sección de ofertas por mantenimiento","/capturas/ml_ofertas_error.png"
+TC8,Comprobar que la sección de ayuda es accesible,Validated,"La sección de ayuda muestra todas las opciones correctamente","/capturas/ml_ayuda.png"
+TC9,Verificar que el cambio de ubicación funciona correctamente,Skipped,"No se realizó la prueba por falta de tiempo",""
+TC10,Comprobar que la visualización de detalles de producto es correcta,Validated,"Los detalles de producto muestran imágenes, descripción y precio correctamente","/capturas/ml_producto.png"
