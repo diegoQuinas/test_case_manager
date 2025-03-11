@@ -4,7 +4,7 @@ use colored::*;
 use csv::Writer;
 use inquire::{Select, Text};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File, create_dir_all};
+use std::fs::{File, create_dir_all, read_dir};
 use std::io::{self, Write};
 use std::path::Path;
 use uuid::Uuid;
@@ -79,10 +79,15 @@ impl std::fmt::Display for TestStatus {
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
     
-    // Crear directorio para almacenar pruebas si no existe
+    // Crear directorios para almacenar pruebas si no existen
     let test_dir = Path::new("tests");
-    if !test_dir.exists() {
-        create_dir_all(test_dir)?;
+    let definitions_dir = Path::new("definitions");
+    let executions_dir = Path::new("executions");
+    
+    for dir in &[test_dir, definitions_dir, executions_dir] {
+        if !dir.exists() {
+            create_dir_all(dir)?;
+        }
     }
     
     match &cli.command {
@@ -143,22 +148,52 @@ fn main() -> io::Result<()> {
 
 /// Selecciona un archivo de prueba existente
 fn select_test_file() -> io::Result<Option<String>> {
-    let test_files = get_test_files()?;
-    
-    if test_files.is_empty() {
-        println!("{}", "No hay archivos de prueba disponibles.".red());
-        return Ok(None);
-    }
-    
-    let selection = Select::new("Selecciona un archivo de prueba:", test_files)
+    // Preguntar si desea seleccionar una definición o una ejecución
+    let options = vec!["Definición", "Ejecución"];
+    let selection = Select::new("¿Qué tipo de archivo deseas seleccionar?", options)
         .prompt();
     
     match selection {
-        Ok(file) => Ok(Some(file)),
-        Err(_) => Ok(None),
+        Ok("Definición") => {
+            // Obtener archivos de definición
+            let definition_files = get_definition_files()?;
+            
+            if definition_files.is_empty() {
+                println!("{}", "No hay archivos de definición disponibles.".red());
+                return Ok(None);
+            }
+            
+            let selection = Select::new("Selecciona un archivo de definición:", definition_files)
+                .prompt();
+            
+            match selection {
+                Ok(file) => Ok(Some(file)),
+                Err(_) => Ok(None),
+            }
+        },
+        Ok("Ejecución") => {
+            // Obtener archivos de ejecución
+            let execution_files = get_execution_files()?;
+            
+            if execution_files.is_empty() {
+                println!("{}", "No hay archivos de ejecución disponibles.".red());
+                return Ok(None);
+            }
+            
+            let selection = Select::new("Selecciona un archivo de ejecución:", execution_files)
+                .prompt();
+            
+            match selection {
+                Ok(file) => Ok(Some(file)),
+                Err(_) => Ok(None),
+            }
+        },
+        _ => Ok(None),
     }
 }
 
+// Esta función ya no se usa, pero la mantenemos comentada por si se necesita en el futuro
+/*
 /// Obtiene la lista de archivos de prueba CSV disponibles
 fn get_test_files() -> io::Result<Vec<String>> {
     let mut files = Vec::new();
@@ -181,19 +216,40 @@ fn get_test_files() -> io::Result<Vec<String>> {
     
     Ok(files)
 }
+*/
 
 /// Lista los archivos de prueba disponibles
 fn list_test_files() -> io::Result<()> {
-    let files = get_test_files()?;
+    // Obtener archivos de definición
+    let definition_files = get_definition_files()?;
     
-    if files.is_empty() {
+    // Obtener archivos de ejecución
+    let execution_files = get_execution_files()?;
+    
+    if definition_files.is_empty() && execution_files.is_empty() {
         println!("{}", "No hay archivos de prueba disponibles.".yellow());
         return Ok(());
     }
     
-    println!("{}", "Archivos de prueba disponibles:".green());
-    for (i, file) in files.iter().enumerate() {
-        println!("{}: {}", i + 1, file);
+    // Mostrar archivos de definición
+    if !definition_files.is_empty() {
+        println!("{}", "Archivos de definición disponibles:".green());
+        for (i, file) in definition_files.iter().enumerate() {
+            println!("{}: {}", i + 1, file);
+        }
+        println!();
+    } else {
+        println!("{}", "No hay archivos de definición disponibles.".yellow());
+    }
+    
+    // Mostrar archivos de ejecución
+    if !execution_files.is_empty() {
+        println!("{}", "Archivos de ejecución disponibles:".green());
+        for (i, file) in execution_files.iter().enumerate() {
+            println!("{}: {}", i + 1, file);
+        }
+    } else {
+        println!("{}", "No hay archivos de ejecución disponibles.".yellow());
     }
     
     Ok(())
@@ -207,15 +263,26 @@ fn create_test_cases(test_type: &str, name: Option<String>) -> io::Result<()> {
         return Ok(());
     }
     
-    // Generar nombre de archivo
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-    let file_name = match name {
-        Some(n) if !n.is_empty() => format!("{}-{}-{}", test_type, n, timestamp),
-        _ => format!("{}-{}", test_type, timestamp),
+    // Generar nombre de archivo base (sin fecha ni hora)
+    let base_name = match name {
+        Some(n) if !n.is_empty() => format!("{}-{}", test_type, n),
+        _ => format!("{}", test_type),
     };
     
-    let csv_path = format!("tests/{}.csv", file_name);
-    let md_path = format!("tests/{}.md", file_name);
+    // Rutas para archivos base (definiciones)
+    let base_csv_path = format!("definitions/{}.csv", base_name);
+    
+    // Verificar si ya existe un archivo con ese nombre
+    if Path::new(&base_csv_path).exists() {
+        let options = vec!["Sí", "No"];
+        let selection = Select::new(format!("Ya existe un archivo con el nombre '{}'. ¿Deseas sobrescribirlo?", base_name).as_str(), options)
+            .prompt();
+        
+        if let Ok("No") = selection {
+            println!("{}", "Operación cancelada.".yellow());
+            return Ok(());
+        }
+    }
     
     // Crear casos de prueba
     let mut test_cases = Vec::new();
@@ -260,8 +327,31 @@ fn create_test_cases(test_type: &str, name: Option<String>) -> io::Result<()> {
     let selection = Select::new("¿Deseas corregir la ortografía de las descripciones?", options)
         .prompt();
     
-    if let Ok("Sí") = selection {
-        println!("{}", "Corrigiendo ortografía...".blue());
+    let final_test_cases = if let Ok("Sí") = selection {
+        // Verificar si la variable de entorno GROQ_API_KEY está configurada
+        if std::env::var("GROQ_API_KEY").is_err() {
+            println!("{}", "ADVERTENCIA: No se encontró la clave API de Groq.".yellow());
+            println!("{}", "Para usar la corrección ortográfica, configura la variable de entorno GROQ_API_KEY.".yellow());
+            println!("{}", "Ejemplo: export GROQ_API_KEY=tu-clave-api".yellow());
+            
+            // Preguntar si desea continuar sin corrección ortográfica
+            let continue_options = vec!["Continuar sin corrección", "Cancelar"];
+            let continue_selection = Select::new("¿Qué deseas hacer?", continue_options)
+                .prompt();
+            
+            if let Ok("Cancelar") = continue_selection {
+                println!("{}", "Operación cancelada.".yellow());
+                return Ok(());
+            }
+            
+            // Continuar sin corrección ortográfica
+            println!("{}", "Continuando sin corrección ortográfica.".blue());
+            // No necesitamos el resultado de clone, solo ignorarlo
+            let _ = test_cases.clone();
+            return Ok(())
+        }
+        
+        println!("{}", "Corrigiendo ortografía usando la API de Groq...".blue());
         
         // Corregir ortografía de las descripciones
         let mut corrected_cases = Vec::new();
@@ -278,20 +368,26 @@ fn create_test_cases(test_type: &str, name: Option<String>) -> io::Result<()> {
             corrected_cases.push(test_case);
         }
         
-        // Guardar en CSV
-        save_to_csv(&csv_path, &corrected_cases)?;
-        
-        // Guardar en Markdown
-        save_to_markdown(&md_path, &corrected_cases, &file_name)?;
+        corrected_cases
     } else {
-        // Guardar en CSV sin corrección
-        save_to_csv(&csv_path, &test_cases)?;
-        
-        // Guardar en Markdown sin corrección
-        save_to_markdown(&md_path, &test_cases, &file_name)?;
-    }
+        test_cases
+    };
     
-    println!("{}", format!("Casos de prueba creados y guardados en {} y {}", csv_path, md_path).green());
+    // Guardar el archivo base (definición) en CSV
+    save_to_csv(&base_csv_path, &final_test_cases)?;
+    
+    // Preguntar si desea ejecutar los casos de prueba ahora
+    let options = vec!["Sí", "No"];
+    let selection = Select::new("¿Deseas ejecutar estos casos de prueba ahora?", options)
+        .prompt();
+    
+    if let Ok("Sí") = selection {
+        // Ejecutar los casos de prueba recién creados
+        execute_test_cases_from_definition(&base_csv_path)?;
+    } else {
+        println!("{}", format!("Definición de casos de prueba creada y guardada en {}", base_csv_path).green());
+        println!("{}", "Puedes ejecutar estos casos de prueba más tarde seleccionando 'Ejecutar casos de prueba' en el menú principal.".blue());
+    }
     
     Ok(())
 }
@@ -392,17 +488,34 @@ fn modify_test_cases(file_path: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Ejecuta casos de prueba
-fn execute_test_cases(file_path: &str) -> io::Result<()> {
-    let mut test_cases = load_from_csv(file_path)?;
+/// Ejecuta casos de prueba a partir de un archivo de definición
+fn execute_test_cases_from_definition(definition_path: &str) -> io::Result<()> {
+    // Cargar los casos de prueba desde el archivo de definición
+    let mut test_cases = load_from_csv(definition_path)?;
     
     if test_cases.is_empty() {
         println!("{}", "No hay casos de prueba para ejecutar.".yellow());
         return Ok(());
     }
     
-    println!("{}", format!("Ejecutando casos de prueba de {}", file_path).blue());
+    // Generar nombre para el archivo de ejecución
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
     
+    // Obtener el nombre base del archivo de definición
+    let base_name = Path::new(definition_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("test_cases");
+    
+    // Crear rutas para los archivos de ejecución
+    let execution_name = format!("{}-{}", base_name, timestamp);
+    let execution_csv_path = format!("executions/{}.csv", execution_name);
+    let execution_md_path = format!("executions/{}.md", execution_name);
+    
+    println!("{}", format!("Ejecutando casos de prueba de la definición {}", definition_path).blue());
+    println!("{}", format!("Los resultados se guardarán en {}", execution_csv_path).blue());
+    
+    // Ejecutar los casos de prueba
     for (i, test_case) in test_cases.iter_mut().enumerate() {
         println!("{}", format!("Caso de prueba #{}: {}", i + 1, test_case.description).blue());
         
@@ -441,21 +554,206 @@ fn execute_test_cases(file_path: &str) -> io::Result<()> {
         test_case.evidence = evidence;
     }
     
-    // Guardar cambios
-    save_to_csv(file_path, &test_cases)?;
+    // Guardar resultados en los archivos de ejecución
+    save_to_csv(&execution_csv_path, &test_cases)?;
+    save_to_markdown(&execution_md_path, &test_cases, &execution_name)?;
     
-    // Actualizar archivo markdown
-    let md_path = file_path.replace(".csv", ".md");
-    let file_name = Path::new(file_path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("test_cases");
-    
-    save_to_markdown(&md_path, &test_cases, file_name)?;
-    
-    println!("{}", "Ejecución de casos de prueba completada y guardada.".green());
+    println!("{}", format!("Ejecución de casos de prueba completada y guardada en {} y {}", execution_csv_path, execution_md_path).green());
     
     Ok(())
+}
+
+/// Ejecuta casos de prueba
+fn execute_test_cases(file_path: &str) -> io::Result<()> {
+    // Verificar si el archivo es una definición o una ejecución anterior
+    if file_path.starts_with("definitions/") {
+        // Si es una definición, ejecutar a partir de ella
+        execute_test_cases_from_definition(file_path)
+    } else {
+        // Si es una ejecución anterior, mostrar mensaje y preguntar
+        println!("{}", "NOTA: Estás ejecutando a partir de un archivo de ejecución anterior, no de una definición base.".yellow());
+        
+        let options = vec!["Continuar con este archivo", "Seleccionar una definición base"];
+        let selection = Select::new("¿Qué deseas hacer?", options)
+            .prompt();
+        
+        match selection {
+            Ok("Seleccionar una definición base") => {
+                // Listar archivos de definición
+                let definitions = get_definition_files()?;
+                
+                if definitions.is_empty() {
+                    println!("{}", "No hay archivos de definición disponibles.".yellow());
+                    return Ok(());
+                }
+                
+                let selection = Select::new("Selecciona un archivo de definición:", definitions)
+                    .prompt();
+                
+                match selection {
+                    Ok(definition_path) => execute_test_cases_from_definition(&definition_path),
+                    Err(_) => {
+                        println!("{}", "Operación cancelada.".yellow());
+                        Ok(())
+                    }
+                }
+            },
+            _ => {
+                // Ejecutar a partir del archivo seleccionado (ejecución anterior)
+                let mut test_cases = load_from_csv(file_path)?;
+                
+                if test_cases.is_empty() {
+                    println!("{}", "No hay casos de prueba para ejecutar.".yellow());
+                    return Ok(());
+                }
+                
+                // Generar nombre para el nuevo archivo de ejecución
+                let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+                
+                // Obtener el nombre base del archivo anterior
+                let file_name = Path::new(file_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("test_cases");
+                
+                // Eliminar el timestamp anterior si existe
+                let base_name = if file_name.contains('-') {
+                    file_name.split('-').take(file_name.split('-').count() - 1).collect::<Vec<&str>>().join("-")
+                } else {
+                    file_name.to_string()
+                };
+                
+                // Crear rutas para los nuevos archivos de ejecución
+                let execution_name = format!("{}-{}", base_name, timestamp);
+                let execution_csv_path = format!("executions/{}.csv", execution_name);
+                let execution_md_path = format!("executions/{}.md", execution_name);
+                
+                println!("{}", format!("Ejecutando casos de prueba a partir de {}", file_path).blue());
+                println!("{}", format!("Los resultados se guardarán en {}", execution_csv_path).blue());
+                
+                // Ejecutar los casos de prueba
+                for (i, test_case) in test_cases.iter_mut().enumerate() {
+                    println!("{}", format!("Caso de prueba #{}: {}", i + 1, test_case.description).blue());
+                    
+                    // Mostrar estado actual
+                    println!("Estado actual: {}", test_case.status);
+                    
+                    // Seleccionar nuevo estado
+                    let status_options = vec!["⏳ Pendiente", "✅ Validado", "❌ Rechazado", "⏭️ Omitido", "🚫 Bloqueado"];
+                    
+                    let new_status = Select::new("Selecciona el resultado de la ejecución:", status_options)
+                        .prompt()
+                        .unwrap_or("⏳ Pendiente");
+                    
+                    test_case.status = match new_status {
+                        "✅ Validado" => TestStatus::Validated,
+                        "❌ Rechazado" => TestStatus::Rejected,
+                        "⏭️ Omitido" => TestStatus::Skipped,
+                        "🚫 Bloqueado" => TestStatus::Blocked,
+                        _ => TestStatus::Pending,
+                    };
+                    
+                    // Agregar observaciones
+                    let observations = Text::new("Observaciones (opcional):")
+                        .with_initial_value(&test_case.observations)
+                        .prompt()
+                        .unwrap_or_else(|_| test_case.observations.clone());
+                    
+                    test_case.observations = observations;
+                    
+                    // Agregar evidencia
+                    let evidence = Text::new("Evidencia (ruta o URL, opcional):")
+                        .with_initial_value(&test_case.evidence)
+                        .prompt()
+                        .unwrap_or_else(|_| test_case.evidence.clone());
+                    
+                    test_case.evidence = evidence;
+                }
+                
+                // Guardar resultados en los nuevos archivos de ejecución
+                save_to_csv(&execution_csv_path, &test_cases)?;
+                save_to_markdown(&execution_md_path, &test_cases, &execution_name)?;
+                
+                println!("{}", format!("Ejecución de casos de prueba completada y guardada en {} y {}", execution_csv_path, execution_md_path).green());
+                
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Obtiene la lista de archivos de definición disponibles
+fn get_definition_files() -> io::Result<Vec<String>> {
+    let mut definition_files = Vec::new();
+    
+    // Verificar si el directorio de definiciones existe
+    let definitions_dir = Path::new("definitions");
+    if !definitions_dir.exists() {
+        create_dir_all(definitions_dir)?;
+        return Ok(definition_files);
+    }
+    
+    // Leer los archivos del directorio
+    for entry in read_dir(definitions_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        
+        // Solo incluir archivos CSV
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("csv") {
+            if let Some(path_str) = path.to_str() {
+                definition_files.push(path_str.to_string());
+            }
+        }
+    }
+    
+    // Ordenar por nombre
+    definition_files.sort();
+    
+    Ok(definition_files)
+}
+
+/// Obtiene la lista de archivos de ejecución disponibles
+fn get_execution_files() -> io::Result<Vec<String>> {
+    let mut execution_files = Vec::new();
+    
+    // Verificar si el directorio de ejecuciones existe
+    let executions_dir = Path::new("executions");
+    if !executions_dir.exists() {
+        create_dir_all(executions_dir)?;
+    } else {
+        // Leer los archivos del directorio
+        for entry in read_dir(executions_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            // Solo incluir archivos CSV
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("csv") {
+                if let Some(path_str) = path.to_str() {
+                    execution_files.push(path_str.to_string());
+                }
+            }
+        }
+    }
+    
+    // Verificar también en el directorio tests (para compatibilidad con versiones anteriores)
+    let tests_dir = Path::new("tests");
+    if tests_dir.exists() {
+        for entry in read_dir(tests_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("csv") {
+                if let Some(path_str) = path.to_str() {
+                    execution_files.push(path_str.to_string());
+                }
+            }
+        }
+    }
+    
+    // Ordenar por fecha (más recientes primero)
+    execution_files.sort_by(|a, b| b.cmp(a));
+    
+    Ok(execution_files)
 }
 
 /// Carga casos de prueba desde un archivo CSV
@@ -498,27 +796,45 @@ fn save_to_csv(file_path: &str, test_cases: &[TestCase]) -> io::Result<()> {
     Ok(())
 }
 
-/// Guarda casos de prueba en un archivo Markdown
-/// Corrige la ortografía de un texto utilizando la API de LanguageTool
+/// Corrige la ortografía de un texto utilizando la API de Groq
 fn correct_spelling(text: &str) -> String {
     // Si el texto está vacío, devolverlo tal cual
     if text.trim().is_empty() {
         return text.to_string();
     }
     
+    // Obtener la clave API de Groq desde una variable de entorno
+    let api_key = match std::env::var("GROQ_API_KEY") {
+        Ok(key) => key,
+        Err(_) => {
+            println!("{}", "No se encontró la clave API de Groq. Usando texto original.".yellow());
+            return text.to_string();
+        }
+    };
+    
     // Crear cliente HTTP
     let client = Client::new();
     
-    // Parámetros para la API de LanguageTool
-    let params = [
-        ("text", text),
-        ("language", "es"),  // Español
-        ("enabledOnly", "false"),
-    ];
+    // Crear el cuerpo de la solicitud para la API de Groq
+    let request_body = serde_json::json!({
+        "messages": [
+            {
+                "role": "system",
+                "content": "Eres un asistente especializado en corrección ortográfica y gramatical en español. Tu tarea es corregir errores ortográficos y gramaticales en el texto proporcionado, manteniendo el significado original. Solo debes devolver el texto corregido, sin explicaciones ni comentarios adicionales."
+            },
+            {
+                "role": "user",
+                "content": format!("Corrige los errores ortográficos y gramaticales en el siguiente texto, manteniendo su significado original: {}", text)
+            }
+        ],
+        "model": "llama3-8b-8192"
+    });
     
-    // Intentar hacer la solicitud a la API
-    match client.post("https://api.languagetool.org/v2/check")
-        .form(&params)
+    // Intentar hacer la solicitud a la API de Groq
+    match client.post("https://api.groq.com/openai/v1/chat/completions")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&request_body)
         .send() {
             Ok(response) => {
                 // Verificar si la respuesta es exitosa
@@ -526,49 +842,49 @@ fn correct_spelling(text: &str) -> String {
                     // Intentar parsear la respuesta JSON
                     match response.json::<Value>() {
                         Ok(json) => {
-                            // Obtener las correcciones
-                            if let Some(matches) = json.get("matches").and_then(|m| m.as_array()) {
-                                let mut corrected = text.to_string();
-                                
-                                // Aplicar correcciones de atrás hacia adelante para no afectar los índices
-                                let mut corrections: Vec<(usize, usize, String)> = Vec::new();
-                                
-                                for m in matches {
-                                    if let (Some(offset), Some(length), Some(replacements)) = (
-                                        m.get("offset").and_then(|o| o.as_u64()),
-                                        m.get("length").and_then(|l| l.as_u64()),
-                                        m.get("replacements").and_then(|r| r.as_array())
-                                    ) {
-                                        // Tomar la primera sugerencia si existe
-                                        if let Some(first_replacement) = replacements.first() {
-                                            if let Some(value) = first_replacement.get("value").and_then(|v| v.as_str()) {
-                                                corrections.push((offset as usize, length as usize, value.to_string()));
-                                            }
+                            // Obtener el contenido corregido
+                            if let Some(choices) = json.get("choices").and_then(|c| c.as_array()) {
+                                if let Some(first_choice) = choices.first() {
+                                    if let Some(message) = first_choice.get("message") {
+                                        if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                                            // Devolver el texto corregido
+                                            return content.trim().to_string();
                                         }
                                     }
                                 }
-                                
-                                // Ordenar las correcciones de mayor a menor offset
-                                corrections.sort_by(|a, b| b.0.cmp(&a.0));
-                                
-                                // Aplicar correcciones
-                                for (offset, length, replacement) in corrections {
-                                    if offset + length <= corrected.len() {
-                                        corrected.replace_range(offset..(offset + length), &replacement);
-                                    }
-                                }
-                                
-                                return corrected;
                             }
                         }
-                        Err(_) => {}
+                        Err(e) => {
+                            println!("{}", format!("Error al parsear la respuesta JSON: {}", e).red());
+                        }
+                    }
+                } else {
+                    // Guardar el estado antes de consumir response
+                    let status = response.status();
+                    
+                    // Intentar obtener el mensaje de error
+                    match response.json::<Value>() {
+                        Ok(error_json) => {
+                            if let Some(error) = error_json.get("error").and_then(|e| e.as_object()) {
+                                let message = error.get("message").and_then(|m| m.as_str()).unwrap_or("Error desconocido");
+                                println!("{}", format!("Error de la API de Groq: {}", message).red());
+                            } else {
+                                println!("{}", format!("Error de la API de Groq: {}", status).red());
+                            }
+                        }
+                        Err(_) => {
+                            println!("{}", format!("Error de la API de Groq: {}", status).red());
+                        }
                     }
                 }
             }
-            Err(_) => {}
+            Err(e) => {
+                println!("{}", format!("Error al conectar con la API de Groq: {}", e).red());
+            }
     }
     
     // En caso de error, devolver el texto original
+    println!("{}", "No se pudo corregir el texto. Usando texto original.".yellow());
     text.to_string()
 }
 
@@ -587,14 +903,38 @@ fn save_to_markdown(file_path: &str, test_cases: &[TestCase], title: &str) -> io
     let skipped = test_cases.iter().filter(|tc| tc.status == TestStatus::Skipped).count();
     let blocked = test_cases.iter().filter(|tc| tc.status == TestStatus::Blocked).count();
     
-    // Escribir resumen al principio
-    writeln!(file, "## Resumen\n")?;
+    // Escribir resumen textual primero
+    writeln!(file, "## Resumen Numérico\n")?;
     writeln!(file, "- Total de casos: {}", test_cases.len())?;
     writeln!(file, "- ✅ Validados: {}", validated)?;
     writeln!(file, "- ❌ Rechazados: {}", rejected)?;
     writeln!(file, "- ⏳ Pendientes: {}", pending)?;
     writeln!(file, "- ⏭️ Omitidos: {}", skipped)?;
     writeln!(file, "- 🚫 Bloqueados: {}\n", blocked)?;
+    
+    // Crear gráfico circular con Mermaid
+    writeln!(file, "## Resumen Visual\n")?;
+    writeln!(file, "```mermaid")?;
+    writeln!(file, "pie title Distribución de Casos de Prueba")?;
+    
+    // Añadir secciones al gráfico solo si tienen valores mayores que cero
+    if validated > 0 {
+        writeln!(file, "    \"✅ Validados\" : {}", validated)?; // Verde
+    }
+    if rejected > 0 {
+        writeln!(file, "    \"❌ Rechazados\" : {}", rejected)?; // Rojo
+    }
+    if pending > 0 {
+        writeln!(file, "    \"⏳ Pendientes\" : {}", pending)?; // Amarillo
+    }
+    if skipped > 0 {
+        writeln!(file, "    \"⏭️ Omitidos\" : {}", skipped)?; // Gris
+    }
+    if blocked > 0 {
+        writeln!(file, "    \"🚫 Bloqueados\" : {}", blocked)?; // Naranja
+    }
+    
+    writeln!(file, "```\n")?;
     
     // Escribir tabla
     writeln!(file, "## Detalle de casos\n")?;

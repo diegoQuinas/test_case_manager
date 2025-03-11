@@ -2,7 +2,7 @@
 
 Fecha de ejecución: 2025-03-11 12:32:00
 
-## Resumen
+## Resumen Numérico
 
 - Total de casos: 10
 - ✅ Validados: 6
@@ -10,6 +10,17 @@ Fecha de ejecución: 2025-03-11 12:32:00
 - ⏳ Pendientes: 1
 - ⏭️ Omitidos: 1
 - 🚫 Bloqueados: 1
+
+## Resumen Visual
+
+```mermaid
+pie title Distribución de Casos de Prueba
+    "✅ Validados" : 6
+    "❌ Rechazados" : 1
+    "⏳ Pendientes" : 1
+    "⏭️ Omitidos" : 1
+    "🚫 Bloqueados" : 1
+```
 
 ## Detalle de casos
 

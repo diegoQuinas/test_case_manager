@@ -1,4 +1,23 @@
-# Rust specific
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: unused return value of `clone` that must be usedse_manager(bin)                                              
+   --> src/main.rs:346:13
+    |
+346 |             test_cases.clone();
+    |             ^^^^^^^^^^^^^^^^^^
+    |
+    = note: cloning is often expensive and is not expected to have side effects
+    = note: `#[warn(unused_must_use)]` on by default
+help: use `let _ = ...` to ignore the resulting value
+    |
+346 |             let _ = test_cases.clone();
+    |             +++++++
+
+warning: `test_case_manager` (bin "test_case_manager") generated 2 warnings                                           
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.04s
+     Running `target/debug/test_case_manager`
+? ¿Qué deseas hacer?# Rust specific
 /target/
 **/*.rs.bk
 *.pdb
@@ -7,6 +26,10 @@ Cargo.lock
 # Generated test files
 /tests/*.csv
 /tests/*.md
+
+# Generated execution files
+/executions/*.csv
+/executions/*.md
 
 # IDE and editor files
 .idea/
